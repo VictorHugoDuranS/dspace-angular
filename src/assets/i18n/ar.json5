@@ -4362,8 +4362,8 @@
   // "item.preview.organization.foundingDate": "Founding Date",
   "item.preview.organization.foundingDate": "تاريخ التأسيس",
 
-  // "item.preview.organization.identifier.crossrefid": "CrossRef ID",
-  "item.preview.organization.identifier.crossrefid": "CrossRef معرف",
+  // "item.preview.organization.identifier.crossrefid": "Crossref ID",
+  "item.preview.organization.identifier.crossrefid": "Crossref معرف",
 
   // "item.preview.organization.identifier.isni": "ISNI",
   "item.preview.organization.identifier.isni": "ISNI",
@@ -6549,6 +6549,10 @@
 
   // "resource-policies.form.name.label": "Name",
   "resource-policies.form.name.label": "الاسم",
+
+  //"resource-policies.form.name.hint": "Max 30 characters",
+  // TODO New key - Add a translation
+  "resource-policies.form.name.hint": "Max 30 characters",
 
   // "resource-policies.form.policy-type.label": "Select the policy type",
   "resource-policies.form.policy-type.label": "حدد نوع السياسة",
