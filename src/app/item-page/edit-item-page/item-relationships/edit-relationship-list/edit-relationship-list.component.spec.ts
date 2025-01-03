@@ -2,7 +2,7 @@ import { DebugElement, NO_ERRORS_SCHEMA } from '@angular/core';
 import { waitForAsync, ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { TranslateModule } from '@ngx-translate/core';
-import { of as observableOf } from 'rxjs';
+import { BehaviorSubject, of as observableOf } from 'rxjs';
 import { LinkService } from '../../../../core/cache/builders/link.service';
 import { ObjectUpdatesService } from '../../../../core/data/object-updates/object-updates.service';
 import { RelationshipDataService } from '../../../../core/data/relationship-data.service';
@@ -28,6 +28,7 @@ import { ConfigurationDataService } from '../../../../core/data/configuration-da
 import { LinkHeadService } from '../../../../core/services/link-head.service';
 import { SearchConfigurationService } from '../../../../core/shared/search/search-configuration.service';
 import { SearchConfigurationServiceStub } from '../../../../shared/testing/search-configuration-service.stub';
+import { XSRFService } from '../../../../core/xsrf/xsrf.service';
 import { ConfigurationProperty } from '../../../../core/shared/configuration-property.model';
 import { Router } from '@angular/router';
 import { RouterMock } from '../../../../shared/mocks/router.mock';
@@ -35,6 +36,7 @@ import { APP_CONFIG } from '../../../../../config/app-config.interface';
 import { EditItemRelationshipsServiceStub } from '../../../../shared/testing/edit-item-relationships.service.stub';
 import { EditItemRelationshipsService } from '../edit-item-relationships.service';
 import { cold } from 'jasmine-marbles';
+import { environment } from '../../../../../environments/environment.test';
 
 describe('EditRelationshipListComponent', () => {
 
@@ -63,6 +65,7 @@ describe('EditRelationshipListComponent', () => {
   let relationships: Relationship[];
   let relationshipType: RelationshipType;
   let paginationOptions: PaginationComponentOptions;
+  let currentItemIsLeftItem$ =  new BehaviorSubject<boolean>(true);
 
   const resetComponent = () => {
     fixture = TestBed.createComponent(EditRelationshipListComponent);
@@ -73,6 +76,7 @@ describe('EditRelationshipListComponent', () => {
     comp.url = url;
     comp.relationshipType = relationshipType;
     comp.hasChanges = observableOf(false);
+    comp.currentItemIsLeftItem$ = currentItemIsLeftItem$;
     fixture.detectChanges();
   };
 
@@ -210,11 +214,11 @@ describe('EditRelationshipListComponent', () => {
 
     editItemRelationshipsService = new EditItemRelationshipsServiceStub();
 
-    const environmentUseThumbs = {
+    const environmentUseThumbs = Object.assign({}, environment, {
       browseBy: {
         showThumbnails: true
       }
-    };
+    });
 
     TestBed.configureTestingModule({
       imports: [SharedModule, TranslateModule.forRoot()],
@@ -233,6 +237,7 @@ describe('EditRelationshipListComponent', () => {
         { provide: ConfigurationDataService, useValue: configurationDataService },
         { provide: SearchConfigurationService, useValue: new SearchConfigurationServiceStub() },
         { provide: EditItemRelationshipsService, useValue: editItemRelationshipsService },
+        { provide: XSRFService, useValue: {} },
         { provide: APP_CONFIG, useValue: environmentUseThumbs }
       ], schemas: [
         NO_ERRORS_SCHEMA
@@ -296,6 +301,7 @@ describe('EditRelationshipListComponent', () => {
             leftwardType: 'isAuthorOfPublication',
             rightwardType: 'isPublicationOfAuthor',
           });
+          currentItemIsLeftItem$ =  new BehaviorSubject<boolean>(true);
           relationshipService.getItemRelationshipsByLabel.calls.reset();
           resetComponent();
         });
@@ -320,6 +326,7 @@ describe('EditRelationshipListComponent', () => {
             leftwardType: 'isPublicationOfAuthor',
             rightwardType: 'isAuthorOfPublication',
           });
+          currentItemIsLeftItem$ =  new BehaviorSubject<boolean>(false);
           relationshipService.getItemRelationshipsByLabel.calls.reset();
           resetComponent();
         });

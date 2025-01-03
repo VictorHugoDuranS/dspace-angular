@@ -26,13 +26,14 @@ import {
   toArray,
   concatMap
 } from 'rxjs/operators';
-import { hasNoValue, hasValue, hasValueOperator } from '../../../../shared/empty.util';
+import { hasNoValue, hasValue, hasValueOperator, isNotEmpty } from '../../../../shared/empty.util';
 import { Relationship } from '../../../../core/shared/item-relationships/relationship.model';
 import {
   RelationshipType
 } from '../../../../core/shared/item-relationships/relationship-type.model';
 import {
   getAllSucceededRemoteData,
+  getFirstCompletedRemoteData,
   getFirstSucceededRemoteData,
   getFirstSucceededRemoteDataPayload,
   getRemoteDataPayload,
@@ -64,6 +65,7 @@ import { FieldChangeType } from '../../../../core/data/object-updates/field-chan
 import { APP_CONFIG, AppConfig } from '../../../../../config/app-config.interface';
 import { itemLinksToFollow } from '../../../../shared/utils/relation-query.utils';
 import { EditItemRelationshipsService } from '../edit-item-relationships.service';
+import { RequestParam } from '../../../../core/cache/models/request-param.model';
 
 @Component({
   selector: 'ds-edit-relationship-list',
@@ -113,7 +115,7 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
    * Observable that emits true if {@link itemType} is on the left-hand side of {@link relationshipType},
    * false if it is on the right-hand side and undefined in the rare case that it is on neither side.
    */
-  private currentItemIsLeftItem$: BehaviorSubject<boolean> = new BehaviorSubject(undefined);
+  @Input() currentItemIsLeftItem$: BehaviorSubject<boolean> = new BehaviorSubject(undefined);
 
   relatedEntityType$: Observable<ItemType>;
 
@@ -213,18 +215,15 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
    * Get the relevant label for this relationship type
    */
   private getLabel(): Observable<string> {
-    return observableCombineLatest([
-      this.relationshipType.leftType,
-      this.relationshipType.rightType,
-    ].map((itemTypeRD) => itemTypeRD.pipe(
-      getFirstSucceededRemoteData(),
-      getRemoteDataPayload(),
-    ))).pipe(
-      map((itemTypes: ItemType[]) => [
-        this.relationshipType.leftwardType,
-        this.relationshipType.rightwardType,
-      ][itemTypes.findIndex((itemType) => itemType.id === this.itemType.id)]),
-    );
+    return this.currentItemIsLeftItem$.pipe(
+      map((currentItemIsLeftItem) => {
+        if (currentItemIsLeftItem) {
+          return this.relationshipType.leftwardType;
+        } else {
+          return this.relationshipType.rightwardType;
+        }
+      })
+      );
   }
 
   /**
@@ -251,6 +250,7 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
     modalComp.toAdd = [];
     modalComp.toRemove = [];
     modalComp.isPending = false;
+    modalComp.hiddenQuery = '-search.resourceid:' + this.item.uuid;
 
     this.item.owningCollection.pipe(
       getFirstSucceededRemoteDataPayload()
@@ -279,7 +279,7 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
                 }
               }
 
-              this.loading$.next(true);
+              this.loading$.next(isNotEmpty(modalComp.toAdd) || isNotEmpty(modalComp.toRemove));
               // emit the last page again to trigger a fieldupdates refresh
               this.relationshipsRd$.next(this.relationshipsRd$.getValue());
             });
@@ -297,6 +297,7 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
         } else {
           modalComp.toRemove.push(searchResult);
         }
+        this.loading$.next(isNotEmpty(modalComp.toAdd) || isNotEmpty(modalComp.toRemove));
       });
     };
 
@@ -336,6 +337,7 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
                       type: this.relationshipType,
                       originalIsLeft: isLeft,
                       originalItem: this.item,
+                      relatedItem,
                       relationship,
                     } as RelationshipIdentifiable;
                     return this.objectUpdatesService.saveRemoveFieldUpdate(this.url,update);
@@ -369,6 +371,11 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
 
       modalComp.toAdd = [];
       modalComp.toRemove = [];
+      this.loading$.next(false);
+    };
+
+    modalComp.closeEv = () => {
+      this.loading$.next(false);
     };
 
     this.relatedEntityType$
@@ -424,24 +431,6 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
 
     this.relationshipMessageKey$ = this.getRelationshipMessageKey();
 
-    this.subs.push(this.relationshipLeftAndRightType$.pipe(
-      map(([leftType, rightType]: [ItemType, ItemType]) => {
-        if (leftType.id === this.itemType.id) {
-          return true;
-        }
-
-        if (rightType.id === this.itemType.id) {
-          return false;
-        }
-
-        // should never happen...
-        console.warn(`The item ${this.item.uuid} is not on the right or the left side of relationship type ${this.relationshipType.uuid}`);
-        return undefined;
-      })
-    ).subscribe((nextValue: boolean) => {
-      this.currentItemIsLeftItem$.next(nextValue);
-    }));
-
 
     // initialize the pagination options
     this.paginationConfig = new PaginationComponentOptions();
@@ -458,21 +447,25 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
     );
 
     // this adds thumbnail images when required by configuration
-    let linksToFollow: FollowLinkConfig<Relationship>[] = itemLinksToFollow(this.fetchThumbnail);
+    let linksToFollow: FollowLinkConfig<Relationship>[] = itemLinksToFollow(this.fetchThumbnail, this.appConfig.item.showAccessStatuses);
 
     this.subs.push(
       observableCombineLatest([
         currentPagination$,
         this.currentItemIsLeftItem$,
+        this.relatedEntityType$,
       ]).pipe(
-        switchMap(([currentPagination, currentItemIsLeftItem]: [PaginationComponentOptions, boolean]) => {
-          // get the relationships for the current item, relationshiptype and page
+        switchMap(([currentPagination, currentItemIsLeftItem, relatedEntityType]: [PaginationComponentOptions, boolean, ItemType]) => {
+          // get the relationships for the current page, item, relationship type and related entity type
           return this.relationshipService.getItemRelationshipsByLabel(
             this.item,
             currentItemIsLeftItem ? this.relationshipType.leftwardType : this.relationshipType.rightwardType,
             {
               elementsPerPage: currentPagination.pageSize,
-              currentPage: currentPagination.currentPage
+              currentPage: currentPagination.currentPage,
+              searchParams: [
+                new RequestParam('relatedEntityType', relatedEntityType.label),
+              ],
             },
             true,
             true,
@@ -508,10 +501,24 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
             this.relationshipService.isLeftItem(relationship, this.item).pipe(
               // emit an array containing both the relationship and whether it's the left item,
               // as we'll need both
-              map((isLeftItem: boolean) => [relationship, isLeftItem])
-            )
+              switchMap((isLeftItem: boolean) => {
+                if (isLeftItem) {
+                  return relationship.rightItem.pipe(
+                    getFirstCompletedRemoteData(),
+                    getRemoteDataPayload(),
+                    map((relatedItem: Item) => [relationship, isLeftItem, relatedItem]),
+                  );
+                } else {
+                  return relationship.leftItem.pipe(
+                    getFirstCompletedRemoteData(),
+                    getRemoteDataPayload(),
+                    map((relatedItem: Item) => [relationship, isLeftItem, relatedItem]),
+                  );
+                }
+              }),
+            ),
           ),
-          map(([relationship, isLeftItem]: [Relationship, boolean]) => {
+          map(([relationship, isLeftItem, relatedItem]: [Relationship, boolean, Item]) => {
             // turn it into a RelationshipIdentifiable, an
             const nameVariant =
               isLeftItem ? relationship.rightwardValue : relationship.leftwardValue;
@@ -521,6 +528,7 @@ export class EditRelationshipListComponent implements OnInit, OnDestroy {
               relationship,
               originalIsLeft: isLeftItem,
               originalItem: this.item,
+              relatedItem: relatedItem,
               nameVariant,
             } as RelationshipIdentifiable;
           }),
